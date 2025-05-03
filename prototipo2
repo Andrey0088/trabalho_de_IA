@@ -1,0 +1,208 @@
+import sys
+from PIL import Image, ImageDraw
+
+class Node():
+    def __init__(self, state, parent, action, cost):
+        self.state = state  # (x, y)
+        self.parent = parent
+        self.action = action
+        self.cost = cost  # Custo local para chegar a este nó
+
+class Maze():
+    # Custo por tipo de terreno
+    TERRAIN_COST = {
+        ' ': 1,   # Espaço vazio - custo padrão
+        '#': 1,   # Terreno plano
+        '*': 3,   # Terreno rochoso
+        '@': 5,   # Montanha
+        'C': 2    # Casa (custo menor que montanha mas tem batalha)
+    }
+    
+    def __init__(self, filename):
+        with open(filename) as f:
+            contents = f.read()
+            
+        if contents.count("A") != 1:
+            raise Exception("Mapa deve ter um ponto de partida (A)")
+        if contents.count("B") != 1:
+            raise Exception("Mapa deve ter um objetivo (B)")
+
+        contents = contents.splitlines()
+        self.height = len(contents)
+        self.width = max(len(line) for line in contents)
+        
+        # Mapear terrenos e posições
+        self.terrain = []
+        self.start = None
+        self.goal = None
+        
+        for i in range(self.height):
+            row = []
+            for j in range(self.width):
+                try:
+                    cell = contents[i][j]
+                    if cell == "A":
+                        self.start = (i, j)
+                        row.append(' ')  # Partida é terreno normal
+                    elif cell == "B":
+                        self.goal = (i, j)
+                        row.append(' ')  # Objetivo é terreno normal
+                    else:
+                        row.append(cell)
+                except IndexError:
+                    row.append(' ')  # Preenche com espaço se fora dos limites
+            self.terrain.append(row)
+
+        self.solution = None
+        self.explored = None
+        self.num_explored = 0
+
+    def print(self):
+        solution = self.solution[1] if self.solution is not None else None
+        print()
+        for i, row in enumerate(self.terrain):
+            for j, cell in enumerate(row):
+                if (i, j) == self.start:
+                    print("A", end="")
+                elif (i, j) == self.goal:
+                    print("B", end="")
+                elif solution is not None and (i, j) in solution:
+                    print("*", end="")
+                elif cell == '#':
+                    print("#", end="")
+                elif cell == '*':
+                    print("*", end="")
+                elif cell == '@':
+                    print("@", end="")
+                elif cell == 'C':
+                    print("C", end="")
+                else:
+                    print(" ", end="")
+            print()
+        print()
+
+    def calculate_cost(self, state):
+        """Calcula o custo do terreno em uma posição específica"""
+        row, col = state
+        terrain_type = self.terrain[row][col]
+        return self.TERRAIN_COST.get(terrain_type, 1)  # Default 1 se não encontrado
+
+    def heuristic(self, state):
+        """Heurística simples: distância de Manhattan até o objetivo"""
+        x1, y1 = state
+        x2, y2 = self.goal
+        return abs(x1 - x2) + abs(y1 - y2)
+
+    def neighbors(self, state):
+        """Retorna vizinhos válidos com seus custos"""
+        row, col = state
+        candidates = [
+            ("up", (row - 1, col)),
+            ("down", (row + 1, col)),
+            ("left", (row, col - 1)),
+            ("right", (row, col + 1))
+        ]
+
+        result = []
+        for action, (r, c) in candidates:
+            if 0 <= r < self.height and 0 <= c < self.width:
+                cost = self.calculate_cost((r, c))
+                # Adiciona custo extra se for uma casa (batalha)
+                if self.terrain[r][c] == 'C':
+                    cost += 5  # Custo adicional da batalha
+                result.append((action, (r, c), cost))
+                
+        return result
+
+    def solve(self):
+        """Best-First Search (algoritmo guloso)"""
+        self.num_explored = 0
+        start = Node(state=self.start, parent=None, action=None, cost=0)
+        frontier = [start]  # Usaremos como lista simples
+        self.explored = set()
+        self.explored.add(self.start)
+
+        while frontier:
+            # Escolhe o nó com menor custo local (Best-First)
+            frontier.sort(key=lambda x: x.cost + self.heuristic(x.state))
+            node = frontier.pop(0)
+            self.num_explored += 1
+
+            if node.state == self.goal:
+                # Reconstrói o caminho
+                actions = []
+                cells = []
+                total_cost = node.cost
+                while node.parent is not None:
+                    actions.append(node.action)
+                    cells.append(node.state)
+                    node = node.parent
+                actions.reverse()
+                cells.reverse()
+                self.solution = (actions, cells, total_cost)
+                return
+
+            for action, state, cost in self.neighbors(node.state):
+                if state not in self.explored:
+                    self.explored.add(state)
+                    child = Node(state=state, parent=node, action=action, cost=node.cost + cost)
+                    frontier.append(child)
+            print(f"Nós explorados: {len(self.explored)}")
+
+        raise Exception("Não há solução")
+
+    def output_image(self, filename):
+        cell_size = 50
+        cell_border = 2
+
+        img = Image.new(
+            "RGBA",
+            (self.width * cell_size, self.height * cell_size),
+            "black"
+        )
+        draw = ImageDraw.Draw(img)
+
+        solution = self.solution[1] if self.solution is not None else None
+        for i, row in enumerate(self.terrain):
+            for j, cell in enumerate(row):
+                # Cores
+                if (i, j) == self.start:
+                    fill = (255, 0, 0)  # Vermelho para início
+                elif (i, j) == self.goal:
+                    fill = (0, 171, 28)  # Verde para objetivo
+                elif solution is not None and (i, j) in solution:
+                    fill = (220, 235, 113)  # Amarelo para solução
+                elif cell == '#':
+                    fill = (200, 200, 200)  # Cinza para terreno plano
+                elif cell == '*':
+                    fill = (139, 69, 19)  # Marrom para rochas
+                elif cell == '@':
+                    fill = (70, 70, 70)  # Cinza escuro para montanhas
+                elif cell == 'C':
+                    fill = (0, 0, 255)  # Azul para casas
+                else:
+                    fill = (237, 240, 252)  # Branco para espaço vazio
+
+                # Desenha célula
+                draw.rectangle(
+                    ([(j * cell_size + cell_border, i * cell_size + cell_border),
+                      ((j + 1) * cell_size - cell_border, (i + 1) * cell_size - cell_border)]),
+                    fill=fill
+                )
+
+        img.save(filename)
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit("Uso: python cavaleiros_zodiaco.py mapa.txt")
+
+    maze = Maze(sys.argv[1])
+    print("Mapa das 12 Casas do Zodíaco:")
+    maze.print()
+    print("Calculando melhor caminho...")
+    maze.solve()
+    print(f"Estados explorados: {maze.num_explored}")
+    print(f"Custo total (tempo): {maze.solution[2]}")
+    print("Melhor caminho:")
+    maze.print()
+    maze.output_image("caminho_cavaleiros.png")
