@@ -1,5 +1,7 @@
 import sys
 
+
+
 class Node():
     def __init__(self, state, parent, action):
         self.state = state
@@ -117,55 +119,37 @@ class Maze():
         return result
 
 
-    def solve(self): #!!!!!!!!!!!!!!!!!!
-        """Finds a solution to maze, if one exists."""
-
-        # Keep track of number of states explored
+    def solve(self, algorithm):
+        """Finds a solution to maze using DFS or BFS."""
         self.num_explored = 0
-
-        # Initialize frontier to just the starting position
         start = Node(state=self.start, parent=None, action=None)
-        frontier = QueueFrontier() # DFS: STACK; BFS: QUEUE
-        
-        #frontier = StackFrontier()  DFS : USA STACK. ruim pro maze3
-        #frontier = QueueFrontier()  BFS : USA QUEUE. ruim pro 
-        
+        frontier = StackFrontier() if algorithm == "dfs" else QueueFrontier()
         frontier.add(start)
-
-        # Initialize an empty explored set
         self.explored = set()
-
-        # Keep looping until solution found
+        
         while True:
-
-            # If nothing left in frontier, then no path
             if frontier.empty():
                 raise Exception("no solution")
-
-            # Choose a node from the frontier
+            
             node = frontier.remove()
             self.num_explored += 1
 
-            # FUNÇÃO DE VERIFICAÇÃO!!!
-            # If node is the goal, then we have a solution
-            if node.state == self.goal: #se for a solução, fazer backtrack p pegar essa solução. sabendo que cada nó armazena seu antecessor e a ação p chegar lá. L.150
+            if node.state == self.goal:
                 actions = []
                 cells = []
-                while node.parent is not None: #vai ficar voltando, rastreando os nós antecessores até o inicio(sem nó antecessor)
+                while node.parent is not None:
                     actions.append(node.action)
                     cells.append(node.state)
                     node = node.parent
-                actions.reverse() # pq terá construido a sequencia final->inicio, mas desejamos inicio->final
+                actions.reverse()
                 cells.reverse()
                 self.solution = (actions, cells)
                 return
-
-            # Mark node as explored, p n voltar dnv nele
+            
             self.explored.add(node.state)
 
-            # Add neighbors to frontier. 
-            for action, state in self.neighbors(node.state): # olha todos os vizinhos(com a função neighbors)
-                if not frontier.contains_state(state) and state not in self.explored: #esse estato já está na fronteira? o estado já está no set explorado? senao tiver em nenhum deles, vai add um novo nó filho na fronteira.
+            for action, state in self.neighbors(node.state):
+                if not frontier.contains_state(state) and state not in self.explored:
                     child = Node(state=state, parent=node, action=action)
                     frontier.add(child)
 
@@ -221,16 +205,29 @@ class Maze():
         img.save(filename)
 
 
-if len(sys.argv) != 2:
-    sys.exit("Usage: python maze.py maze.txt")
-    
+if len(sys.argv) != 3:
+    sys.exit("Usage: python maze.py maze.txt [dfs|bfs]")
 
-m = Maze(sys.argv[1])
+maze_file = sys.argv[1]
+algorithm = sys.argv[2].lower()
+
+if algorithm not in ["dfs", "bfs"]:
+    sys.exit("Algorithm must be either 'dfs' or 'bfs'")
+
+# Criar o labirinto
+m = Maze(maze_file)
 print("Maze:")
 m.print()
-print("Solving...")
-m.solve()
+
+print(f"Solving using {algorithm.upper()}...")
+
+import time
+start_time = time.time()
+m.solve(algorithm)
+end_time = time.time()
+
 print("States Explored:", m.num_explored)
-print("Solution:")
-m.print()
+print("Solution Path:", m.solution[1])
+print("Time Elapsed: {:.4f} seconds".format(end_time - start_time))
+
 m.output_image("maze.png", show_explored=True)
